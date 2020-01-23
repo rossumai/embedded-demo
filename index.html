@@ -2,22 +2,13 @@
 <head>
 <meta charset="utf-8">
 <title>Rossum Embedded Demo</title>
-
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"/>
+<link rel="stylesheet" type="text/css" href="main.css">
 <script type="text/javascript" src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 
-<style>
-h1 { text-align: center; margin: 2ex 1em; }
-h2, p { margin: 2ex 1em; }
-p { font-size: 12pt; }
-p.warning { text-align: center; color: red; }
-section { margin: 4ex 1em; padding: 2ex 1em; border: 1pt solid black; }
-
-table td { border: 1pt solid black; padding: 1ex 0.5em; }
-</style>
-
+<body>
 <script type="text/javascript">
 var apiurl = 'https://api.elis.rossum.ai/';
 var self_url = 'https://pasky.or.cz/embedded-demo/';
@@ -194,6 +185,12 @@ function renderList(list_name, docs) {
 	list_id = '#' + list_name + '_list'
 	console.log('RENDER *** ', list_id, docs);
 	$(list_id).empty();
+	$(list_id).append('<tr><th>Rossum Document ID</th></tr>');
+
+	if (docs.length == 0) {
+		$(list_id).append('<tr><td class="tableDocId">' + 'No documents to show.' + '</td>' + '</tr>');
+	}
+
 	for (var i = 0; i < docs.length; i++) {
 		var doc = docs[i];
 		console.log('___', doc);
@@ -295,73 +292,79 @@ function initApp() {
 
 </head>
 
-<body>
+<div class="top-menu"><h1>Some Company App</h1></div>
+<div class="project-navigation"><h2>Projects / Invoices</h2></div>
 
-<h1>Rossum Embedded Demo</h1>
+<div class="explanation">
+	<p>Rossum validation interface can be embedded into a third-party app. That allows users to enjoy the Rossum validation interface (with its speedy validation and AI feedback) while keeping the app they use. No extra login is required, a document is directly shown to the user and on confirming it, the user is immediately returned to the app.</p>
+	<p>This page showcases this capability. It demoes three ways to embed Rossum in an external app: redirect-based (the standard way), popup-based and iframe-based. After validation is completed, the captured data is shown on the page.</p>
+	<p>Check out the source at the <a href="https://github.com/rossumai/embedded-demo">GitHub rossumai/embedded-demo</a>.</p>
+</div>
 
-<p>Rossum validation interface can be embedded in a third-party app. That allows users to enjoy the Rossum validation interface (with its speedy validation and AI feedback) while leaving the app they use. No extra login is required, a document is directly shown to the user and on confirming it, the user is immediately returned to the app.</p>
-
-<p>This page showcases this capability. It demoes three ways to embed Rossum in an external app: redirect-based (the standard way), popup-based and iframe-based. After validation is completed, the captured data is shown on the page.</p>
-
-<p>Check out the source at the <a href="https://github.com/rossumai/embedded-demo">GitHub rossumai/embedded-demo</a>.</p>
-
-<h2>Login data</h2>
-<p>The API communication requires Rossum login information. If you do not have an account yet, <a href="https://elis.rossum.ai/registration">register for a free trial</a>.</p>
+<div class="api-authentication">
+	<h3>API Authentication</h3>
+	<p>The API communication requires Rossum login information. If you do not have an account yet, <a href="https://elis.rossum.ai/registration">register for a free trial</a>.</p>
 <p>Usually, the backend of the external app would perform the login based on fixed secret credentials, and share only a short-lived token with the frontend for authenticated users.</p>
 <form id="credentials">
 	<p><b>Username:</b> <input type="text" id="username" placeholder="email@example.com"></p>
 	<p><b>Password:</b> <input type="password" id="password"></p>
-	<p><b>Queue URL:</b> <input type="text" id="queue_url" size="40" placeholder="https://elis.rossum.ai/annotations/12345"> (dashboard address after logging into Rossum)</p>
+	<p><b>Queue URL*:</b> <input type="text" id="queue_url" size="40" placeholder="https://elis.rossum.ai/annotations/12345"></p>
+	<p>*dashboard address after logging into Rossum</p>
 	<p><input type="button" id="credentials_submit" value="Login"></p>
 </form>
 
-<section id="iframe_box" style="display: none">
-<h2>IFrame Area</h2>
-<iframe id="iframe" width="800" height="600"></iframe>
-</section>
-
-<div id="qr_display" style="display: none">
-<section>
-	<h2>Document</h2>
-	<div class="container">
-	  <div class="row">
-	    <div class="col-sm-4">
-		<div id="qr_code"></div>
-	    </div>
-	    <div class="col-sm-8">
-		<table id="qr_table" class="table">
-		</table>
-	    </div>
-	  </div>
-	</div>
-</section>
 </div>
 
-<section id="validate_box" style="display: none">
-<h2>Ready for validation</h2>
-<table id="validate_list" class="table">
-</table>
-</section>
+<div class="dashboard">
 
-<section id="load_box" style="display: none">
-<h2>Load document</h2>
-<form id="upload_form" enctype="multipart/form-data">
-	<input name="file" type="file" id="file_input" multiple>
-</form>
-</section>
+	<section id="load_box">
+	<form id="upload_form" enctype="multipart/form-data">
+		<b>Upload new Invoice:</b>
+		<input name="file" type="file" id="file_input" multiple>
+	</form>
+	</section>
 
-<section id="processing_box" style="display: none">
-<h2>Processed documents</h2>
-<p>These documents are currently being processed by the AI – the list is refreshed every two seconds.</p>
-<table id="processing_list">
-</table>
-</section>
+	<div id="qr_display" style="display: none">
+		<section>
+			<h2>Document</h2>
+			<div class="container">
+			  <div class="row">
+				<div class="col-sm-4">
+				<div id="qr_code"></div>
+				</div>
+				<div class="col-sm-8">
+				<table id="qr_table" class="table">
+				</table>
+				</div>
+			  </div>
+			</div>
+		</section>
+	</div>
 
-<section id="done_box" style="display: none">
-<h2>Past validated documents</h2>
-<table id="done_list">
-</table>
-</section>
+	<section id="iframe_box" style="display: none">
+	<h2>IFrame Area</h2>
+	<iframe id="iframe"></iframe>
+	</section>
+
+	<section id="processing_box">
+		<h2>Documents being processed</h2>
+		<p>These documents are currently being processed by the AI – the list is refreshed every two seconds.</p>
+		<table id="processing_list">
+		</table>
+	</section>
+
+	<section id="validate_box">
+		<h2>Ready for validation</h2>
+		<table id="validate_list" class="table">
+		</table>
+	</section>
+
+	<section id="done_box">
+		<h2>Past validated documents</h2>
+		<table id="done_list">
+		</table>
+	</section>
+</div>
 
 </body>
 </html>
