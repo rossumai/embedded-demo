@@ -12,7 +12,6 @@ h2, p { margin: 2ex 1em; }
 p { font-size: 12pt; }
 p.warning { text-align: center; color: red; }
 section { margin: 4ex 1em; padding: 2ex 1em; border: 1pt solid black; }
-
 table td { border: 1pt solid black; padding: 1ex 0.5em; }
 </style>
 
@@ -196,7 +195,7 @@ function renderList(list_name, docs) {
 	$(list_id).append('<tr><th>Rossum Document ID</th></tr>');
 
 	if (docs.length == 0) {
-		$(list_id).append('<tr><td class="tableDocId">' + 'No documents to show.' + '</td>' + td_button + '</tr>');
+		$(list_id).append('<tr><td class="tableDocId">' + 'No documents to show.' + '</td>' + '</tr>');
 	}
 
 	for (var i = 0; i < docs.length; i++) {
