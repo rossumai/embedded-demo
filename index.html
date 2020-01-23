@@ -1,0 +1,364 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Rossum Embedded Demo</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
+<style>
+h1 { text-align: center; margin: 2ex 1em; }
+h2, p { margin: 2ex 1em; }
+p { font-size: 12pt; }
+p.warning { text-align: center; color: red; }
+section { margin: 4ex 1em; padding: 2ex 1em; border: 1pt solid black; }
+
+table td { border: 1pt solid black; padding: 1ex 0.5em; }
+</style>
+
+<script type="text/javascript">
+var apiurl = 'https://api.elis.rossum.ai/';
+var self_url = 'https://pasky.or.cz/embedded-demo/';
+
+/*** General tools */
+
+function showError(msg) {
+	/* TODO */
+	window.alert(msg);
+}
+
+
+/*** Rossum API */
+
+function rossum_api(method, endpoint, params) {
+	var payload = new FormData();
+	Object.entries(params).forEach(e => { payload.append(e[0], e[1]) });
+	console.log(method, endpoint, params, Object.entries(params), payload.entries());
+	return $.ajax({
+		type: method,
+		url: apiurl + endpoint,
+		data: payload,
+		processData: false,
+		xhrFields: {
+			withCredentials: true
+		    },
+		contentType: false,
+		beforeSend: function (xhr) {
+			if (localStorage.token) {
+				xhr.setRequestHeader('Authorization', 'token ' + localStorage.token);
+			}
+		    },
+		error: function(res) {
+			showError('Rossum API error ' + res.code + ': ' + res.responseText);
+		}
+	});
+}
+
+function submitFile(queue_id, file) {
+	return rossum_api('POST', 'v1/queues/' + queue_id + '/upload/' + file.name, {content: file});
+}
+
+
+/*** Embedded methods */
+
+function selfDocumentUrl(doc_id) {
+	var qi = window.location.href.indexOf('?');
+	var return_url = qi != -1 ? window.location.href.substring(0, qi) : window.location.href;
+	return_url += '?doc_id=' + doc_id;
+	return return_url;
+}
+
+function selfBaseUrl() {
+	var qi = window.location.href.lastIndexOf('/');
+	return window.location.href.substring(0, qi + 1);
+}
+
+function embeddedRedirect(doc_id) {
+	var return_url = selfDocumentUrl(doc_id);
+
+	/* At this point, the browser window is redirected to the Rossum app.
+	 * (First, the Rossum app validation URL for this document is requested
+	 * from the API, then the redirect is executed.) */
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded', {'locale': 'cs_CZ', 'return_url': return_url, 'cancel_url': window.location.href})
+		.then(res => { window.location.href = res.url; });
+
+	/* After clicking the [Confirm] button in the Rossum app, the document
+	 * status changes and the browser window is redirected to the `return_url`
+	 * which is our app again, just set up to show the captured data for this
+	 * document. */
+}
+
+function embeddedIFrame(doc_id) {
+	/* At this point, the IFrame window is redirected to the Rossum app. */
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded',
+			{
+				'locale': 'cs_CZ',
+				'return_url': selfBaseUrl() + 'return.html?doc_id=' + doc_id,
+				'cancel_url': selfBaseUrl() + 'cancel.html',
+			})
+		.then(res => { $('#iframe').attr('src', res.url); });
+	$('#iframe_box').show();
+
+	/* Now, wait for a message coming back from the iframe and act accordingly. */
+
+	function receiveMessage() {
+		/* XXX: Verify origin. */
+		console.log('>>> received iframe message:', event);
+		if (event.data && parseInt(event.data) == event.data) {
+			/* Confirm. */
+			window.location.href = selfDocumentUrl(parseInt(event.data));
+		} else {
+			/* Cancel. */
+			$('#iframe_box').hide();
+		}
+		window.removeEventListener("message", receiveMessage, false);
+	}
+	window.addEventListener("message", receiveMessage, false);
+}
+
+function embeddedPopup(doc_id) {
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded',
+			{
+				'locale': 'cs_CZ',
+				'return_url': selfBaseUrl() + 'return.html?doc_id=' + doc_id,
+				'cancel_url': selfBaseUrl() + 'cancel.html',
+			})
+		.then(res => { window.open(res.url, 'embeddedwindow'); });
+
+	/* Now, wait for a message coming back from the popup and act accordingly. */
+
+	function receiveMessage() {
+		/* XXX: Verify origin. */
+		console.log('>>> received popup message:', event);
+		if (event.data && parseInt(event.data) == event.data) {
+			/* Confirm. */
+			window.location.href = selfDocumentUrl(parseInt(event.data));
+		} else {
+			/* Cancel. */
+		}
+		window.removeEventListener("message", receiveMessage, false);
+	}
+	window.addEventListener("message", receiveMessage, false);
+}
+
+
+/*** Display methods */
+
+function docToObject(docobj, docres) {
+	console.log('docres', docres);
+	docres.forEach(dp => {
+		if (dp.category == 'datapoint') {
+			docobj[dp.schema_id] = dp.content.value;
+		} else if (dp.category == 'section') {
+			docobj = docToObject(docobj, dp.children);
+		}
+	});
+	return docobj;
+}
+
+function renderDoc(docobj) {
+	$('#qr_table').empty();
+
+	Object.entries(docobj).forEach(e => {
+		$('#qr_table').append('<tr><td>' + e[0] + '</td><td>' + e[1] + '</td></tr>');
+	});
+}
+
+function showDoc(doc_id) {
+	return rossum_api('GET', 'v1/annotations/' + doc_id + '/content', {}).then(res => renderDoc(docToObject({}, res.content)));
+}
+
+
+/*** Listing methods */
+
+function loadList(queue_id, doc_status) {
+	/* XXX: doc_status max len 2 */
+	return rossum_api('GET', 'v1/annotations?queue=' + queue_id + '&status=' + doc_status[0] + '&sideload=documents', {})
+		.then(res => {
+			var docs = res.results;
+			console.log(doc_status[0], docs);
+			if(doc_status.length > 1) {
+				var p = rossum_api('GET', 'v1/annotations?queue=' + queue_id + '&status=' + doc_status[1] + '&sideload=documents', {})
+				console.log('next', doc_status[1], p);
+				return p
+					.then(res2 => { console.log('join', doc_status, docs, res2.results); docs = docs.concat(res2.results); return docs; });
+			} else {
+				return Promise.resolve(docs);
+			}
+		});
+}
+
+function renderList(list_name, docs) {
+	list_id = '#' + list_name + '_list'
+	console.log('RENDER *** ', list_id, docs);
+	$(list_id).empty();
+	for (var i = 0; i < docs.length; i++) {
+		var doc = docs[i];
+		console.log('___', doc);
+		var td_button = '';
+		if (list_id == '#validate_list') {
+			td_button = '<td class="tableAnnotate">'
+				    + '<button id="redir_' + doc.id + '">Redirect</button>'
+				    + '<button id="popup_' + doc.id + '">Popup</button>'
+				    + '<button id="iframe_' + doc.id + '">IFrame</button>'
+				    + '</td>';
+		} else if (list_id == '#done_list') {
+			td_button = '<td class="tableAnnotate"><a href="?doc_id=' + doc.id + '">Display</a></td>';
+		}
+		$(list_id).append('<tr><td class="tableDocId">' + doc.id + '</td>' + td_button + '</tr>');
+		$(document).on('click', '#redir_' + doc.id, e => { embeddedRedirect(doc.id) });
+		$(document).on('click', '#popup_' + doc.id, e => { embeddedPopup(doc.id) });
+		$(document).on('click', '#iframe_' + doc.id, e => { embeddedIFrame(doc.id) });
+	}
+	if (docs.length > 0) {
+		$('#' + list_name + '_box').show();
+	}
+}
+
+function setList(list_id, queue_id, doc_status) {
+	var p = loadList(queue_id, doc_status);
+	console.log(list_id, doc_status, p);
+	p.then(docs => renderList(list_id, docs));
+}
+
+function updateProcessing(queue_id) {
+	return setList('processing', queue_id, ['importing']);
+}
+
+function updateLists(queue_id) {
+	$('#processing_list').ready(function() { updateProcessing(queue_id); });
+	$('#validate_list').ready(function() { setList('validate', queue_id, ['to_review', 'reviewing']); });
+	$('#done_list').ready(function() { setList('done', queue_id, ['exporting', 'exported']); });
+
+	setTimeout(function() { updateLists(queue_id) }, 10000);
+}
+
+
+/*** Initialize app */
+
+
+$(document).ready(function() { $('#credentials_submit').click(tryLogin); });
+
+$(document).ready(function() {
+	$('#username').val(localStorage.username);
+	$('#password').val(localStorage.password);
+	$('#queue_url').val(localStorage.queue_url);
+
+	if (localStorage.username)
+		tryLogin();
+});
+
+function tryLogin() {
+	/* Some global variables. */
+	localStorage.username = $('#username').val();
+	localStorage.password = $('#password').val();
+	localStorage.queue_url = $('#queue_url').val();
+
+	queue_id = localStorage.queue_url.replace('https://elis.rossum.ai/annotations/', '');
+	var qi = queue_id.indexOf('?');
+	queue_id = qi != -1 ? queue_id.substring(0, qi) : queue_id;
+	if (!queue_id || parseInt(queue_id) != queue_id) {
+		window.alert('Error parsing the queue URL. It should be in the format https://elis.rossum.ai/annotations/NUMBER[?...]');
+		return;
+	}
+	localStorage.queue_id = queue_id;
+
+	/* Obtain token. */
+	return rossum_api('POST', 'v1/auth/login', {'username': localStorage.username, 'password': localStorage.password})
+		.done(res => {
+			console.log(res);
+			localStorage.token = res.key;
+			initApp(); /* Login successful. Start the rest of the app. */
+		});
+}
+
+function initApp() {
+	updateLists(localStorage.queue_id);
+
+	$('#load_box').show();
+	$(document).on('change', '#file_input', e => {
+		for (var i = 0; i < e.target.files.length; i++) {
+			submitFile(localStorage.queue_id, e.target.files[i]).then(function() { updateProcessing(localStorage.queue_id) });
+		}
+	});
+
+	var urlParams = new URLSearchParams(window.location.search);
+	if (urlParams.has('doc_id')) {
+		$('#qr_display').show();
+		showDoc(urlParams.get('doc_id'));
+	}
+}
+
+</script>
+
+</head>
+
+<body>
+
+<h1>Rossum Embedded Demo</h1>
+
+<p>Rossum validation interface can be embedded in a third-party app. That allows users to enjoy the Rossum validation interface (with its speedy validation and AI feedback) while leaving the app they use. No extra login is required, a document is directly shown to the user and on confirming it, the user is immediately returned to the app.</p>
+
+<p>This page showcases this capability. It demoes three ways to embed Rossum in an external app: redirect-based (the standard way), popup-based and iframe-based. After validation is completed, the captured data is shown on the page.</p>
+
+<h2>Login data</h2>
+<p>The API communication requires Rossum login information. If you do not have an account yet, <a href="https://elis.rossum.ai/registration">register for a free trial</a>.</p>
+<form id="credentials">
+	<p><b>Username:</b> <input type="text" id="username" placeholder="email@example.com"></p>
+	<p><b>Password:</b> <input type="password" id="password"></p>
+	<p><b>Queue URL:</b> <input type="text" id="queue_url" size="40" placeholder="https://elis.rossum.ai/annotations/12345"> (dashboard address after logging into Rossum)</p>
+	<p><input type="button" id="credentials_submit" value="Login"></p>
+</form>
+
+<section id="iframe_box" style="display: none">
+<h2>IFrame Area</h2>
+<iframe id="iframe" width="800" height="600"></iframe>
+</section>
+
+<div id="qr_display" style="display: none">
+<section>
+	<h2>Document</h2>
+	<div class="container">
+	  <div class="row">
+	    <div class="col-sm-4">
+		<div id="qr_code"></div>
+	    </div>
+	    <div class="col-sm-8">
+		<table id="qr_table" class="table">
+		</table>
+	    </div>
+	  </div>
+	</div>
+</section>
+</div>
+
+<section id="validate_box" style="display: none">
+<h2>Ready for validation</h2>
+<table id="validate_list" class="table">
+</table>
+</section>
+
+<section id="load_box" style="display: none">
+<h2>Load document</h2>
+<form id="upload_form" enctype="multipart/form-data">
+	<input name="file" type="file" id="file_input" multiple>
+</form>
+</section>
+
+<section id="processing_box" style="display: none">
+<h2>Processed documents</h2>
+<p>These documents are currently being processed by the AI – the list is refreshed every two seconds.</p>
+<table id="processing_list">
+</table>
+</section>
+
+<section id="done_box" style="display: none">
+<h2>Past validated documents</h2>
+<table id="done_list">
+</table>
+</section>
+
+</body>
+</html>

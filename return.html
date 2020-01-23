@@ -1,0 +1,13 @@
+<html>
+<head>
+<script type="text/javascript">
+console.log(window.parent, window.opener);
+if (window.opener)
+	window.opener.postMessage((new URLSearchParams(window.location.search)).get('doc_id'), "*"); // popup
+else
+	window.parent.postMessage((new URLSearchParams(window.location.search)).get('doc_id'), "*"); // iframe
+window.close();
+</script>
+</head>
+<body></body>
+</html>

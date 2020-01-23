@@ -1,0 +1,13 @@
+<html>
+<head>
+<script type="text/javascript">
+console.log(window.parent, window.opener);
+if (window.opener)
+	window.opener.postMessage(null, "*"); // popup
+else
+	window.parent.postMessage(null, "*"); // iframe
+window.close();
+</script>
+</head>
+<body></body>
+</html>
