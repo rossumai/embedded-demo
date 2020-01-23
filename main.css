@@ -60,3 +60,9 @@ text-align: center;
 height:800px;
 width: calc(100% - 60px);
 }
+
+h2, p { margin: 2ex 1em; }
+p { font-size: 12pt; }
+p.warning { text-align: center; color: red; }
+section { margin: 4ex 1em; padding: 2ex 1em; border: 1pt solid black; }
+table td { border: 1pt solid black; padding: 1ex 0.5em; }
