@@ -90,7 +90,13 @@ function embeddedIFrame(doc_id) {
 				'cancel_url': selfBaseUrl() + 'cancel.html',
 			})
 		.then(res => { $('#iframe').attr('src', res.url); });
+
+
 	$('#iframe_box').show();
+
+	$([document.documentElement, document.body]).animate({
+			scrollTop: $("#iframe_box").offset().top
+		}, 2000);
 
 	/* Now, wait for a message coming back from the iframe and act accordingly. */
 
@@ -230,6 +236,7 @@ function updateLists(queue_id) {
 	$('#done_list').ready(function() { setList('done', queue_id, ['exporting', 'exported']); });
 
 	setTimeout(function() { updateLists(queue_id) }, 10000);
+	$('#upload_banner').hide();
 }
 
 
@@ -252,6 +259,8 @@ function tryLogin() {
 	localStorage.username = $('#username').val();
 	localStorage.password = $('#password').val();
 	localStorage.queue_url = $('#queue_url').val();
+
+	delete localStorage.token;
 
 	queue_id = localStorage.queue_url.replace('https://elis.rossum.ai/annotations/', '');
 	var qi = queue_id.indexOf('?');
@@ -279,6 +288,9 @@ function initApp() {
 		for (var i = 0; i < e.target.files.length; i++) {
 			submitFile(localStorage.queue_id, e.target.files[i]).then(function() { updateProcessing(localStorage.queue_id) });
 		}
+		$('#upload_banner').show();
+
+
 	});
 
 	var urlParams = new URLSearchParams(window.location.search);
@@ -322,6 +334,7 @@ function initApp() {
 		<b>Upload new Invoice:</b>
 		<input name="file" type="file" id="file_input" multiple>
 	</form>
+		<div id="upload_banner" style="display: none;"><p style="background-color: LightGreen;"><b>Uploaded documents are being processed below...</b></p></div>
 	</section>
 
 	<div id="qr_display" style="display: none">
