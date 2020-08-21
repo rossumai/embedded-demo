@@ -5,4 +5,4 @@ Rossum validation interface can be embedded into a third-party app. That allows 
 
 This small project showcases this capability. It demoes three ways to embed Rossum in an external app: redirect-based (the standard way), popup-based and iframe-based. After validation is completed, the captured data is shown on the page.
 
-[Find more information about the embedded mode in our API documentation.](https://api.elis.develop.rossum.ai/docs/#embedded-mode)
+[Find more information about the embedded mode in our API documentation.](https://api.elis.rossum.ai/docs/#embedded-mode)
