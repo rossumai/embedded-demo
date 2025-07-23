@@ -10,9 +10,6 @@
 
 <body>
 <script type="text/javascript">
-var apiurl = 'https://api.elis.rossum.ai/';
-var self_url = 'https://pasky.or.cz/embedded-demo/';
-
 /*** General tools */
 
 function showError(msg) {
@@ -23,13 +20,14 @@ function showError(msg) {
 
 /*** Rossum API */
 
-function rossum_api(method, endpoint, params) {
+function rossum_api(method, endpoint, params, type=null) {
 	var payload = new FormData();
 	Object.entries(params).forEach(e => { payload.append(e[0], e[1]) });
 	console.log(method, endpoint, params, Object.entries(params), payload.entries());
+	var url = localStorage.apiUrl + endpoint;
 	return $.ajax({
 		type: method,
-		url: apiurl + endpoint,
+		url: url,
 		data: payload,
 		processData: false,
 		xhrFields: {
@@ -37,8 +35,11 @@ function rossum_api(method, endpoint, params) {
 		    },
 		contentType: false,
 		beforeSend: function (xhr) {
-			if (localStorage.token) {
-				xhr.setRequestHeader('Authorization', 'token ' + localStorage.token);
+			if (localStorage.admin_token && (!type || type === 'admin')) {
+				xhr.setRequestHeader('Authorization', 'token ' + localStorage.admin_token);
+			}
+			else if (localStorage.embed_token && (!type || type === 'embed')) {
+				xhr.setRequestHeader('Authorization', 'token ' + localStorage.embed_token);
 			}
 		    },
 		error: function(res) {
@@ -48,7 +49,7 @@ function rossum_api(method, endpoint, params) {
 }
 
 function submitFile(queue_id, file) {
-	return rossum_api('POST', 'v1/queues/' + queue_id + '/upload/' + file.name, {content: file});
+	return rossum_api('POST', 'v1/queues/' + queue_id + '/upload/' + file.name, {content: file}, 'admin');
 }
 
 
@@ -72,7 +73,11 @@ function embeddedRedirect(doc_id) {
 	/* At this point, the browser window is redirected to the Rossum app.
 	 * (First, the Rossum app validation URL for this document is requested
 	 * from the API, then the redirect is executed.) */
-	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded', {'locale': 'cs_CZ', 'return_url': return_url, 'cancel_url': window.location.href})
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/create_embedded_url', {
+		'locale': 'cs_CZ',
+		'return_url': return_url,
+		'cancel_url': window.location.href
+	}, 'embed')
 		.then(res => { window.location.href = res.url; });
 
 	/* After clicking the [Confirm] button in the Rossum app, the document
@@ -83,12 +88,12 @@ function embeddedRedirect(doc_id) {
 
 function embeddedIFrame(doc_id) {
 	/* At this point, the IFrame window is redirected to the Rossum app. */
-	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded',
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/create_embedded_url',
 			{
 				'locale': 'cs_CZ',
 				'return_url': selfBaseUrl() + 'return.html?doc_id=' + doc_id,
 				'cancel_url': selfBaseUrl() + 'cancel.html',
-			})
+			}, 'embed')
 		.then(res => { $('#iframe').attr('src', res.url); });
 
 
@@ -116,12 +121,12 @@ function embeddedIFrame(doc_id) {
 }
 
 function embeddedPopup(doc_id) {
-	rossum_api('POST', 'v1/annotations/' + doc_id + '/start_embedded',
+	rossum_api('POST', 'v1/annotations/' + doc_id + '/create_embedded_url',
 			{
 				'locale': 'cs_CZ',
 				'return_url': selfBaseUrl() + 'return.html?doc_id=' + doc_id,
 				'cancel_url': selfBaseUrl() + 'cancel.html',
-			})
+			}, 'embed')
 		.then(res => { window.open(res.url, 'embeddedwindow'); });
 
 	/* Now, wait for a message coming back from the popup and act accordingly. */
@@ -171,20 +176,30 @@ function showDoc(doc_id) {
 /*** Listing methods */
 
 function loadList(queue_id, doc_status) {
-	/* XXX: doc_status max len 2 */
-	return rossum_api('GET', 'v1/annotations?queue=' + queue_id + '&status=' + doc_status[0] + '&sideload=documents', {})
-		.then(res => {
-			var docs = res.results;
-			console.log(doc_status[0], docs);
-			if(doc_status.length > 1) {
-				var p = rossum_api('GET', 'v1/annotations?queue=' + queue_id + '&status=' + doc_status[1] + '&sideload=documents', {})
-				console.log('next', doc_status[1], p);
-				return p
-					.then(res2 => { console.log('join', doc_status, docs, res2.results); docs = docs.concat(res2.results); return docs; });
-			} else {
-				return Promise.resolve(docs);
-			}
-		});
+    if (!Array.isArray(doc_status) || doc_status.length === 0) {
+        return Promise.resolve([]);
+    }
+
+    const fetchPromises = doc_status.map(status => {
+        const url = 'v1/annotations?queue=' + queue_id + '&status=' + status + '&sideload=documents';
+        return rossum_api('GET', url, {});
+    });
+
+    return Promise.all(fetchPromises)
+        .then(results => {
+            let allDocs = [];
+            results.forEach(res => {
+                if (res && Array.isArray(res.results)) {
+                    allDocs = allDocs.concat(res.results);
+                }
+            });
+            console.log('Combined results for statuses:', doc_status, allDocs);
+            return allDocs;
+        })
+        .catch(error => {
+            console.error('Error fetching documents for multiple statuses:', error);
+            throw error;
+        });
 }
 
 function renderList(list_name, docs) {
@@ -202,11 +217,12 @@ function renderList(list_name, docs) {
 		console.log('___', doc);
 		var td_button = '';
 		if (list_id == '#validate_list') {
-			td_button = '<td class="tableAnnotate">'
-				    + '<button id="redir_' + doc.id + '">Redirect</button>'
-				    + '<button id="popup_' + doc.id + '">Popup</button>'
-				    + '<button id="iframe_' + doc.id + '">IFrame</button>'
-				    + '</td>';
+				td_button = '<td class="tableAnnotate">'
+					+ '<button class="embed-button" id="redir_' + doc.id + '">Redirect</button>'
+					+ '<button class="embed-button" id="popup_' + doc.id + '">Popup</button>'
+					+ '<button class="embed-button" id="iframe_' + doc.id + '">IFrame</button>'
+					+ '</td>';
+
 		} else if (list_id == '#done_list') {
 			td_button = '<td class="tableAnnotate"><a href="?doc_id=' + doc.id + '">Display</a></td>';
 		}
@@ -214,6 +230,7 @@ function renderList(list_name, docs) {
 		$(document).on('click', '#redir_' + doc.id, e => { embeddedRedirect(doc.id) });
 		$(document).on('click', '#popup_' + doc.id, e => { embeddedPopup(doc.id) });
 		$(document).on('click', '#iframe_' + doc.id, e => { embeddedIFrame(doc.id) });
+		$('.embed-button').prop('disabled', !localStorage.embed_token);
 	}
 	if (docs.length > 0) {
 		$('#' + list_name + '_box').show();
@@ -233,7 +250,7 @@ function updateProcessing(queue_id) {
 function updateLists(queue_id) {
 	$('#processing_list').ready(function() { updateProcessing(queue_id); });
 	$('#validate_list').ready(function() { setList('validate', queue_id, ['to_review', 'reviewing']); });
-	$('#done_list').ready(function() { setList('done', queue_id, ['exporting', 'exported']); });
+	$('#done_list').ready(function() { setList('done', queue_id, ['exporting', 'exported', 'confirmed']); });
 
 	setTimeout(function() { updateLists(queue_id) }, 10000);
 	$('#upload_banner').hide();
@@ -246,53 +263,114 @@ function updateLists(queue_id) {
 $(document).ready(function() { $('#credentials_submit').click(tryLogin); });
 
 $(document).ready(function() {
-	$('#username').val(localStorage.username);
-	$('#password').val(localStorage.password);
+	$('#admin_username').val(localStorage.admin_username);
+	$('#admin_password').val(localStorage.admin_password);
+	$('#embed_username').val(localStorage.embed_username);
+	$('#embed_password').val(localStorage.embed_password);
 	$('#queue_url').val(localStorage.queue_url);
-
-	if (localStorage.username)
-		tryLogin();
+	delete localStorage.admin_token;
+	delete localStorage.embed_token;
+	tryLogin();
 });
+
+// fix the scrolling
+$(document).ready(function() {
+    $('#iframe').hover(
+        function() {
+            // Mouse entered the iframe
+            $('body').css('overflow', 'hidden');
+        },
+        function() {
+            // Mouse left the iframe
+            $('body').css('overflow', ''); // Or 'auto'
+        }
+    );
+});
+
+$('#load_box').show();
+$(document).on('change', '#file_input', e => {
+	for (var i = 0; i < e.target.files.length; i++) {
+		submitFile(localStorage.queue_id, e.target.files[i]).then(function () {
+			updateProcessing(localStorage.queue_id)
+		});
+	}
+	$('#upload_banner').show();
+});
+
+function extractIdFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const params = new URLSearchParams(urlObj.search);
+
+    const filtering = params.get('filtering');
+    if (filtering) {
+      const decodedFiltering = decodeURIComponent(filtering);
+      const filteringObj = JSON.parse(decodedFiltering);
+
+      if (filteringObj && filteringObj.items && Array.isArray(filteringObj.items)) {
+        for (const item of filteringObj.items) {
+          if (item.field === 'queue' && item.operator === 'isAnyOf' && Array.isArray(item.value) && item.value.length > 0) {
+            return item.value[0];
+          }
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Error parsing URL or filtering parameter:", error);
+    return null;
+  }
+}
 
 function tryLogin() {
 	/* Some global variables. */
-	localStorage.username = $('#username').val();
-	localStorage.password = $('#password').val();
+	localStorage.admin_username = $('#admin_username').val();
+	localStorage.admin_password = $('#admin_password').val();
+	localStorage.embed_username = $('#embed_username').val();
+	localStorage.embed_password = $('#embed_password').val();
 	localStorage.queue_url = $('#queue_url').val();
+	localStorage.apiUrl = new URL(localStorage.queue_url).origin + "/api/"
 
-	delete localStorage.token;
+	queue_id = extractIdFromUrl(localStorage.queue_url)
 
-	queue_id = localStorage.queue_url.replace('https://elis.rossum.ai/annotations/', '');
-	var qi = queue_id.indexOf('?');
-	queue_id = qi != -1 ? queue_id.substring(0, qi) : queue_id;
 	if (!queue_id || parseInt(queue_id) != queue_id) {
-		window.alert('Error parsing the queue URL. It should be in the format https://elis.rossum.ai/annotations/NUMBER[?...]');
+		window.alert('Error parsing the queue URL.');
 		return;
 	}
 	localStorage.queue_id = queue_id;
 
 	/* Obtain token. */
-	return rossum_api('POST', 'v1/auth/login', {'username': localStorage.username, 'password': localStorage.password})
-		.done(res => {
-			console.log(res);
-			localStorage.token = res.key;
-			initApp(); /* Login successful. Start the rest of the app. */
-		});
+	if (localStorage.admin_token && (!localStorage.admin_username || !localStorage.admin_password))
+		delete localStorage.admin_token;
+		$('#file_input').prop('disabled', !localStorage.admin_token);
+	if (!localStorage.admin_token && localStorage.admin_username && localStorage.admin_password)
+	{
+		rossum_api('POST', 'v1/auth/login', {'username': localStorage.admin_username, 'password': localStorage.admin_password}, 'admin')
+			.done(res => {
+				console.log(res);
+				localStorage.admin_token = res.key;
+				initApp();
+				$('#file_input').prop('disabled', !localStorage.admin_token);
+			});
+	}
+
+	if (localStorage.embed_token && (!localStorage.embed_username || !localStorage.embed_password))
+		delete localStorage.embed_token;
+		$('.embed-button').prop('disabled', !localStorage.embed_token);
+	if (!localStorage.embed_token && localStorage.embed_username && localStorage.embed_password)
+		{
+		rossum_api('POST', 'v1/auth/login', {'username': localStorage.embed_username, 'password': localStorage.embed_password}, 'embed')
+			.done(res => {
+				console.log(res);
+				localStorage.embed_token = res.key;
+				initApp();
+				$('.embed-button').prop('disabled', !localStorage.embed_token);
+			});
+	}
 }
 
 function initApp() {
 	updateLists(localStorage.queue_id);
-
-	$('#load_box').show();
-	$(document).on('change', '#file_input', e => {
-		for (var i = 0; i < e.target.files.length; i++) {
-			submitFile(localStorage.queue_id, e.target.files[i]).then(function() { updateProcessing(localStorage.queue_id) });
-		}
-		$('#upload_banner').show();
-
-
-	});
-
 	var urlParams = new URLSearchParams(window.location.search);
 	if (urlParams.has('doc_id')) {
 		$('#qr_display').show();
@@ -315,14 +393,24 @@ function initApp() {
 
 <div class="api-authentication">
 	<h3>API Authentication</h3>
-	<p>The API communication requires Rossum login information. If you do not have an account yet, <a href="https://elis.rossum.ai/registration">register for a free trial</a>.</p>
-<p>Usually, the backend of the external app would perform the login based on fixed secret credentials, and share only a short-lived token with the frontend for authenticated users.</p>
+	<p>The API communication requires Rossum login information. Usually, the backend of the external app would perform the login based on fixed secret credentials, and share only a short-lived token with the frontend for authenticated users. </p>
+	<p>If you do not have an account yet, <a href="https://rossum.app/registration">register for a free trial</a>.</p>
+	<p>After finishing the registration and creating access with the main admin account, you need to create another access for the embedding access. Continue to Settings->Users->Add user and create an user with Annotator Embedded role.</p>
+
 <form id="credentials">
-	<p><b>Username:</b> <input type="text" id="username" placeholder="email@example.com"></p>
-	<p><b>Password:</b> <input type="password" id="password"></p>
-	<p><b>Queue URL*:</b> <input type="text" id="queue_url" size="40" placeholder="https://elis.rossum.ai/annotations/12345"></p>
-	<p>*dashboard address after logging into Rossum</p>
-	<p><input type="button" id="credentials_submit" value="Login"></p>
+    <div>
+        <p><b>Admin/main username:</b> <input type="text" id="admin_username" placeholder="email@example.com"></p>
+        <p><b>Admin/main password:</b> <input type="password" id="admin_password"></p>
+       <p>*must be filled if you want to upload a document</p>
+    </div>
+    <div>
+        <p><b>Embedded username:</b> <input type="text" id="embed_username" placeholder="email@example.com"></p>
+        <p><b>Embedded password:</b> <input type="password" id="embed_password"></p>
+       <p>*must be filled if you want to try embedding</p>
+    </div>
+    <p><b>Queue URL*:</b> <input type="text" id="queue_url" size="50" placeholder="https://company.rossum.app/documents?filtering=..."></p>
+    <p>*browser url address after logging into Rossum, or after picking some category/queue in the menu</p>
+    <p style="flex-basis: 100%;"><input type="button" id="credentials_submit" value="Login"></p>
 </form>
 
 </div>
@@ -332,7 +420,7 @@ function initApp() {
 	<section id="load_box">
 	<form id="upload_form" enctype="multipart/form-data">
 		<b>Upload new Invoice:</b>
-		<input name="file" type="file" id="file_input" multiple>
+		<input disabled name="file" type="file" id="file_input" multiple>
 	</form>
 		<div id="upload_banner" style="display: none;"><p style="background-color: LightGreen;"><b>Uploaded documents are being processed below...</b></p></div>
 	</section>
@@ -368,6 +456,7 @@ function initApp() {
 
 	<section id="validate_box">
 		<h2>Ready for validation</h2>
+		<p>To use embedded validation from this website, you must log in with your embedded account.</p>
 		<table id="validate_list" class="table">
 		</table>
 	</section>
