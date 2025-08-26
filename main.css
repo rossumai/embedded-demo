@@ -62,3 +62,24 @@ p { font-size: 12pt; }
 p.warning { text-align: center; color: red; }
 section { margin: 4ex 1em; padding: 2ex 1em; border: 1pt solid black; }
 table td { border: 1pt solid black; padding: 1ex 0.5em; }
+
+#credentials {
+    display: flex; /* Makes the form a flex container */
+    flex-wrap: wrap; /* Allows items to wrap to the next line */
+    gap: 20px; /* Adds space between the columns */
+    align-items: flex-start; /* Aligns items to the top if they have different heights */
+}
+
+#credentials > div { /* Target the div wrappers for username/password pairs */
+    display: flex;
+    flex-direction: column; /* Stack the username and password vertically within each div */
+}
+
+#credentials p {
+    margin-bottom: 5px; /* Adjust spacing between lines within a pair */
+    margin-top: 0;
+}
+
+#queue_url {
+    flex-basis: 100%; /* Makes the URL input take full width below the username/password fields */
+}
